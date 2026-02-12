@@ -15,6 +15,7 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+  int _lastUiMessageIdShown = 0;
 
   @override
   void initState() {
@@ -82,6 +83,20 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         child: Consumer<TranslatorProvider>(
           builder: (context, provider, child) {
+            if (provider.uiMessage != null &&
+                provider.uiMessageId != _lastUiMessageIdShown) {
+              _lastUiMessageIdShown = provider.uiMessageId;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(provider.uiMessage!),
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              });
+            }
+
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 100, 16, 16),
               child: Column(
@@ -98,6 +113,12 @@ class _HomeScreenState extends State<HomeScreen>
                   // Dil seçimi
                   _buildLanguageSelector(provider),
                   const SizedBox(height: 16),
+
+                  // Auto dil tespiti progress
+                  if (provider.isDetectingLanguage) ...[
+                    _buildAutoDetectProgress(provider),
+                    const SizedBox(height: 16),
+                  ],
 
                   // Kontrol butonları
                   _buildControlButtons(provider),
@@ -409,20 +430,87 @@ class _HomeScreenState extends State<HomeScreen>
               ),
               items: const [
                 DropdownMenuItem(value: 'tr-TR', child: Text('🇹🇷 Türkçe')),
-                DropdownMenuItem(value: 'en-US', child: Text('🇺🇸 English')),
-                DropdownMenuItem(value: 'fr-FR', child: Text('🇫🇷 Français')),
-                DropdownMenuItem(value: 'de-DE', child: Text('🇩🇪 Deutsch')),
-                DropdownMenuItem(value: 'es-ES', child: Text('🇪🇸 Español')),
-                DropdownMenuItem(value: 'it-IT', child: Text('🇮🇹 Italiano')),
-                DropdownMenuItem(value: 'pt-PT', child: Text('🇵🇹 Português')),
-                DropdownMenuItem(value: 'ru-RU', child: Text('🇷🇺 Русский')),
-                DropdownMenuItem(value: 'ja-JP', child: Text('🇯🇵 日本語')),
-                DropdownMenuItem(value: 'zh-CN', child: Text('🇨🇳 中文')),
-                DropdownMenuItem(value: 'ar-SA', child: Text('🇸🇦 العربية')),
-                DropdownMenuItem(value: 'ko-KR', child: Text('🇰🇷 한국어')),
-                DropdownMenuItem(value: 'hi-IN', child: Text('🇮🇳 हिन्दी')),
+DropdownMenuItem(value: 'en-US', child: Text('🇺🇸 English')),
+DropdownMenuItem(value: 'de-DE', child: Text('🇩🇪 Deutsch')),
+DropdownMenuItem(value: 'fr-FR', child: Text('🇫🇷 Français')),
+DropdownMenuItem(value: 'es-ES', child: Text('🇪🇸 Español')),
+DropdownMenuItem(value: 'it-IT', child: Text('🇮🇹 Italiano')),
+DropdownMenuItem(value: 'pt-PT', child: Text('🇵🇹 Português')),
+DropdownMenuItem(value: 'ru-RU', child: Text('🇷🇺 Русский')),
+DropdownMenuItem(value: 'ar-SA', child: Text('🇸🇦 العربية')),
+DropdownMenuItem(value: 'zh-CN', child: Text('🇨🇳 简体中文')),
+DropdownMenuItem(value: 'ja-JP', child: Text('🇯🇵 日本語')),
+DropdownMenuItem(value: 'ko-KR', child: Text('🇰🇷 한국어')),
+
+// Avrupa
+DropdownMenuItem(value: 'nl-NL', child: Text('🇳🇱 Nederlands')),
+DropdownMenuItem(value: 'pl-PL', child: Text('🇵🇱 Polski')),
+DropdownMenuItem(value: 'cs-CZ', child: Text('🇨🇿 Čeština')),
+DropdownMenuItem(value: 'sk-SK', child: Text('🇸🇰 Slovenčina')),
+DropdownMenuItem(value: 'hu-HU', child: Text('🇭🇺 Magyar')),
+DropdownMenuItem(value: 'ro-RO', child: Text('🇷🇴 Română')),
+DropdownMenuItem(value: 'bg-BG', child: Text('🇧🇬 Български')),
+DropdownMenuItem(value: 'hr-HR', child: Text('🇭🇷 Hrvatski')),
+DropdownMenuItem(value: 'sr-RS', child: Text('🇷🇸 Српски')),
+DropdownMenuItem(value: 'sl-SI', child: Text('🇸🇮 Slovenščina')),
+DropdownMenuItem(value: 'uk-UA', child: Text('🇺🇦 Українська')),
+DropdownMenuItem(value: 'el-GR', child: Text('🇬🇷 Ελληνικά')),
+DropdownMenuItem(value: 'sv-SE', child: Text('🇸🇪 Svenska')),
+DropdownMenuItem(value: 'da-DK', child: Text('🇩🇰 Dansk')),
+DropdownMenuItem(value: 'fi-FI', child: Text('🇫🇮 Suomi')),
+DropdownMenuItem(value: 'no-NO', child: Text('🇳🇴 Norsk')),
+DropdownMenuItem(value: 'is-IS', child: Text('🇮🇸 Íslenska')),
+DropdownMenuItem(value: 'et-EE', child: Text('🇪🇪 Eesti')),
+DropdownMenuItem(value: 'lv-LV', child: Text('🇱🇻 Latviešu')),
+DropdownMenuItem(value: 'lt-LT', child: Text('🇱🇹 Lietuvių')),
+
+// Asya-Pasifik
+DropdownMenuItem(value: 'zh-TW', child: Text('🇹🇼 繁體中文')),
+DropdownMenuItem(value: 'zh-HK', child: Text('🇭🇰 粵語')),
+DropdownMenuItem(value: 'hi-IN', child: Text('🇮🇳 हिन्दी')),
+DropdownMenuItem(value: 'bn-IN', child: Text('🇮🇳 বাংলা')),
+DropdownMenuItem(value: 'ta-IN', child: Text('🇮🇳 தமிழ்')),
+DropdownMenuItem(value: 'te-IN', child: Text('🇮🇳 తెలుగు')),
+DropdownMenuItem(value: 'mr-IN', child: Text('🇮🇳 मराठी')),
+DropdownMenuItem(value: 'ur-PK', child: Text('🇵🇰 اردو')),
+DropdownMenuItem(value: 'th-TH', child: Text('🇹🇭 ไทย')),
+DropdownMenuItem(value: 'vi-VN', child: Text('🇻🇳 Tiếng Việt')),
+DropdownMenuItem(value: 'id-ID', child: Text('🇮🇩 Bahasa Indonesia')),
+DropdownMenuItem(value: 'ms-MY', child: Text('🇲🇾 Bahasa Melayu')),
+DropdownMenuItem(value: 'tl-PH', child: Text('🇵🇭 Filipino')),
+
+// Orta Doğu & Afrika
+DropdownMenuItem(value: 'fa-IR', child: Text('🇮🇷 فارسی')),
+DropdownMenuItem(value: 'he-IL', child: Text('🇮🇱 עברית')),
+DropdownMenuItem(value: 'sw-KE', child: Text('🇰🇪 Kiswahili')),
+DropdownMenuItem(value: 'am-ET', child: Text('🇪🇹 አማርኛ')),
+DropdownMenuItem(value: 'zu-ZA', child: Text('🇿🇦 isiZulu')),
+
+// Latin Amerika
+DropdownMenuItem(value: 'es-MX', child: Text('🇲🇽 Español (MX)')),
+DropdownMenuItem(value: 'es-AR', child: Text('🇦🇷 Español (AR)')),
+DropdownMenuItem(value: 'pt-BR', child: Text('🇧🇷 Português (BR)')),
+
+// Diğer
+DropdownMenuItem(value: 'ca-ES', child: Text('🇪🇸 Català')),
+DropdownMenuItem(value: 'eu-ES', child: Text('🇪🇸 Euskara')),
+DropdownMenuItem(value: 'gl-ES', child: Text('🇪🇸 Galego')),
+DropdownMenuItem(value: 'af-ZA', child: Text('🇿🇦 Afrikaans')),
+DropdownMenuItem(value: 'sq-AL', child: Text('🇦🇱 Shqip')),
+DropdownMenuItem(value: 'hy-AM', child: Text('🇦🇲 Հայերեն')),
+DropdownMenuItem(value: 'az-AZ', child: Text('🇦🇿 Azərbaycan')),
+DropdownMenuItem(value: 'ka-GE', child: Text('🇬🇪 ქართული')),
+DropdownMenuItem(value: 'kk-KZ', child: Text('🇰🇿 Қазақ')),
+DropdownMenuItem(value: 'km-KH', child: Text('🇰🇭 ខ្មែរ')),
+DropdownMenuItem(value: 'lo-LA', child: Text('🇱🇦 ລາວ')),
+DropdownMenuItem(value: 'my-MM', child: Text('🇲🇲 မြန်မာ')),
+DropdownMenuItem(value: 'ne-NP', child: Text('🇳🇵 नेपाली')),
+DropdownMenuItem(value: 'si-LK', child: Text('🇱🇰 සිංහල')),
+
               ],
-              onChanged: provider.autoDetectLanguage ? null : (value) {
+              onChanged: (provider.autoDetectLanguage || provider.isDetectingLanguage)
+                  ? null
+                  : (value) {
                 if (value != null) {
                   provider.setLanguage(value);
                 }
@@ -440,12 +528,55 @@ class _HomeScreenState extends State<HomeScreen>
               ),
               subtitle: Text(
                 provider.autoDetectLanguage 
-                    ? '5 saniye kayıt alıp dil tespit edilir'
+                    ? '3 saniye kayıt alıp dil tespit edilir'
                     : 'Seçili dilde direkt konuşma tanıma başlar',
                 style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
+            ),
+            if (provider.lastDetectedLanguage != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Son tespit: ${provider.lastDetectedLanguage} '
+                '${provider.lastDetectedConfidence != null ? '(güven ${(provider.lastDetectedConfidence! * 100).toStringAsFixed(0)}%)' : ''}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAutoDetectProgress(TranslatorProvider provider) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade300,
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Dil tespit ediliyor... Lütfen bekleyin',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
           ],
         ),
@@ -475,7 +606,7 @@ class _HomeScreenState extends State<HomeScreen>
                   ],
                 ),
                 child: ElevatedButton.icon(
-                  onPressed: provider.isListening
+                  onPressed: provider.isListening || provider.isDetectingLanguage
                       ? null
                       : () => provider.startRecording(),
                   style: ElevatedButton.styleFrom(
@@ -518,7 +649,9 @@ class _HomeScreenState extends State<HomeScreen>
                   ],
                 ),
                 child: ElevatedButton.icon(
-                  onPressed: provider.isListening || provider.connectedUserId == null
+                  onPressed: provider.isListening ||
+                          provider.connectedUserId == null ||
+                          provider.isDetectingLanguage
                       ? null
                       : () => provider.startSpeaking(),
                   style: ElevatedButton.styleFrom(

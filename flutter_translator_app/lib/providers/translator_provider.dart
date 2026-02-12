@@ -32,6 +32,11 @@ class TranslatorProvider extends ChangeNotifier {
   bool _isListening = false;
   bool _textToSpeechEnabled = true;
   bool _autoDetectLanguage = true; // Otomatik dil tespiti
+  bool _isDetectingLanguage = false;
+  double? _lastDetectedConfidence;
+  String? _lastDetectedLanguage;
+  int _uiMessageId = 0;
+  String? _uiMessage;
   List<Map<String, dynamic>> _userList = [];
   List<Map<String, dynamic>> _conversationHistory = [];
   
@@ -59,9 +64,16 @@ class TranslatorProvider extends ChangeNotifier {
   bool get isListening => _isListening;
   bool get textToSpeechEnabled => _textToSpeechEnabled;
   bool get autoDetectLanguage => _autoDetectLanguage;
+  bool get isDetectingLanguage => _isDetectingLanguage;
+  double? get lastDetectedConfidence => _lastDetectedConfidence;
+  String? get lastDetectedLanguage => _lastDetectedLanguage;
+  int get uiMessageId => _uiMessageId;
+  String? get uiMessage => _uiMessage;
   List<Map<String, dynamic>> get userList => _userList;
   List<Map<String, dynamic>> get conversationHistory => _conversationHistory;
   Stream<Map<String, dynamic>>? get messageStream => _webSocketService.messageStream;
+
+  static const double _languageConfidenceThreshold = 0.75;
 
   TranslatorProvider({String? host}) {
     if (host != null) _host = host;
@@ -248,6 +260,71 @@ class TranslatorProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _setUiMessage(String message) {
+    _uiMessage = message;
+    _uiMessageId++;
+    notifyListeners();
+  }
+
+  static double? _parseConfidence(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  static String? _mapPredictedLanguageToLocale(String? predicted) {
+    if (predicted == null) return null;
+    final lang = predicted.toLowerCase();
+
+    // Common model outputs
+    switch (lang) {
+      case 'tr':
+      case 'turkish':
+        return 'tr-TR';
+      case 'en':
+      case 'english':
+        return 'en-US';
+      case 'de':
+      case 'german':
+        return 'de-DE';
+      case 'fr':
+      case 'french':
+        return 'fr-FR';
+      case 'es':
+      case 'spanish':
+        return 'es-ES';
+      case 'it':
+      case 'italian':
+        return 'it-IT';
+      case 'pt':
+      case 'portuguese':
+        return 'pt-PT';
+      case 'ru':
+      case 'russian':
+        return 'ru-RU';
+      case 'ar':
+      case 'arabic':
+        return 'ar-SA';
+      case 'zh':
+      case 'chinese':
+        return 'zh-CN';
+      case 'ja':
+      case 'japanese':
+        return 'ja-JP';
+      case 'ko':
+      case 'korean':
+        return 'ko-KR';
+      case 'hi':
+      case 'hindi':
+        return 'hi-IN';
+    }
+
+    // Some models return locale-like strings already
+    if (lang.contains('-')) return predicted;
+    return null;
+  }
+
   // Text-to-Speech'i aç/kapat
   void toggleTextToSpeech(bool enabled) {
     _textToSpeechEnabled = enabled;
@@ -268,12 +345,19 @@ class TranslatorProvider extends ChangeNotifier {
       }
       
       // Otomatik dil tespiti AÇIK: 5 saniye ses kaydı yap
+      _isDetectingLanguage = true;
+      _lastDetectedConfidence = null;
+      _lastDetectedLanguage = null;
+      notifyListeners();
+
       final success = await _audioService.startRecording(
         duration: const Duration(seconds: 4),
       );
 
       if (!success) {
         print('❌ Ses kaydı başlatılamadı');
+        _isDetectingLanguage = false;
+        notifyListeners();
         return;
       }
 
@@ -289,22 +373,49 @@ class TranslatorProvider extends ChangeNotifier {
 
       if (recordingPath == null) {
         print('❌ Kayıt alınamadı');
+        _isDetectingLanguage = false;
+        notifyListeners();
         return;
       }
 
       // Dil algılama
       final languageResult = await _apiService.detectLanguage(recordingPath);
       if (languageResult != null) {
-        final detectedLang = languageResult['predicted_language'];
-        print('🌐 Algılanan dil: $detectedLang');
-        
-        // Dil seçimini güncelle
-        if (detectedLang == 'tr' || detectedLang == 'nn' || detectedLang == 'jw') {
-          setLanguage('tr-TR');
-        } else if (detectedLang == 'en') {
-          setLanguage('en-US');
+        final detectedLang = languageResult['predicted_language']?.toString();
+        final confidence = _parseConfidence(
+          languageResult['confidence'] ??
+              languageResult['score'] ??
+              languageResult['probability'] ??
+              languageResult['confidence_score'],
+        );
+
+        _lastDetectedLanguage = detectedLang;
+        _lastDetectedConfidence = confidence;
+
+        print('🌐 Algılanan dil: $detectedLang (confidence=${confidence ?? 'n/a'})');
+
+        if (confidence != null && confidence < _languageConfidenceThreshold) {
+          _isDetectingLanguage = false;
+          _isListening = false;
+          await _speechService.stopListening();
+          notifyListeners();
+          _setUiMessage(
+            'Üzgünüm, dili anlayamadım (güven ${(confidence * 100).toStringAsFixed(0)}%). Tekrar deneyin veya dili manuel seçin.',
+          );
+          return;
         }
+
+        // Dil seçimini güncelle (dropdown otomatik değişsin)
+        final locale = _mapPredictedLanguageToLocale(detectedLang);
+        if (locale != null) {
+          setLanguage(locale);
+        }
+      } else {
+        _setUiMessage('Dil tespiti başarısız oldu. Tekrar deneyin veya dili manuel seçin.');
       }
+
+      _isDetectingLanguage = false;
+      notifyListeners();
 
       // Konuşma tanımayı başlat
       await _startSpeechRecognition(false); // WebSocket'e gönderme
@@ -313,6 +424,7 @@ class TranslatorProvider extends ChangeNotifier {
       print('❌ Start Recording hatası: $e');
       _isRecording = false;
       _textToSpeechEnabled = true;
+      _isDetectingLanguage = false;
       notifyListeners();
     }
   }
