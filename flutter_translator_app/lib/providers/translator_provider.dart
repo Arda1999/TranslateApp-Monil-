@@ -439,30 +439,83 @@ class TranslatorProvider extends ChangeNotifier {
 
       print('🗣️ Start Speaking: WebSocket modu başlatılıyor');
       _textToSpeechEnabled = true; // Seslendirmeyi aç
+
+      // Eğer otomatik dil tespiti KAPALI ise, direkt konuşma tanımayı başlat
+      if (!_autoDetectLanguage) {
+        await _startSpeechRecognition(true); // WebSocket'e gönder
+        return;
+      }
+
+      // Otomatik dil tespiti AÇIK: kısa bir kayıt alıp dili tespit et
+      _isDetectingLanguage = true;
+      _lastDetectedConfidence = null;
+      _lastDetectedLanguage = null;
+      notifyListeners();
+
+      const recordDuration = Duration(seconds: 4);
       
-      // 5 saniye ses kaydı yap (dil algılama için)
-      final success = await _audioService.startRecording(
-        duration: const Duration(seconds: 5),
-      );
+      final success = await _audioService.startRecording(duration: recordDuration);
 
       if (!success) {
         print('❌ Ses kaydı başlatılamadı');
+        _isDetectingLanguage = false;
+        notifyListeners();
         return;
       }
 
       _isRecording = true;
       notifyListeners();
 
-      await Future.delayed(const Duration(seconds: 5));
+      await Future.delayed(recordDuration);
       
       final recordingPath = await _audioService.stopRecording();
       _isRecording = false;
       notifyListeners();
 
-      if (recordingPath != null) {
-        // Dil algılama (opsiyonel)
-        await _apiService.detectLanguage(recordingPath);
+      if (recordingPath == null) {
+        print('❌ Kayıt alınamadı');
+        _isDetectingLanguage = false;
+        notifyListeners();
+        return;
       }
+
+      final languageResult = await _apiService.detectLanguage(recordingPath);
+      if (languageResult != null) {
+        final detectedLang = languageResult['predicted_language']?.toString();
+        final confidence = _parseConfidence(
+          languageResult['confidence'] ??
+              languageResult['score'] ??
+              languageResult['probability'] ??
+              languageResult['confidence_score'],
+        );
+
+        _lastDetectedLanguage = detectedLang;
+        _lastDetectedConfidence = confidence;
+
+        print('🌐 Algılanan dil: $detectedLang (confidence=${confidence ?? 'n/a'})');
+
+        if (confidence != null && confidence < _languageConfidenceThreshold) {
+          _isDetectingLanguage = false;
+          notifyListeners();
+          _setUiMessage(
+            'Üzgünüm, dili anlayamadım (güven ${(confidence * 100).toStringAsFixed(0)}%). Tekrar deneyin veya dili manuel seçin.',
+          );
+          return;
+        }
+
+        final locale = _mapPredictedLanguageToLocale(detectedLang);
+        if (locale != null) {
+          setLanguage(locale);
+        }
+      } else {
+        _isDetectingLanguage = false;
+        notifyListeners();
+        _setUiMessage('Dil tespiti başarısız oldu. Tekrar deneyin veya dili manuel seçin.');
+        return;
+      }
+
+      _isDetectingLanguage = false;
+      notifyListeners();
 
       // Konuşma tanımayı başlat
       await _startSpeechRecognition(true); // WebSocket'e gönder
@@ -470,6 +523,7 @@ class TranslatorProvider extends ChangeNotifier {
     } catch (e) {
       print('❌ Start Speaking hatası: $e');
       _isRecording = false;
+      _isDetectingLanguage = false;
       notifyListeners();
     }
   }
