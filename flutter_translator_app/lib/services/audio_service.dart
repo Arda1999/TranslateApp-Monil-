@@ -56,12 +56,9 @@ class AudioService {
       _isRecording = true;
       print('🎙️ Ses kaydı başlatıldı: $_currentRecordingPath');
 
-      // Belirli bir süre sonra otomatik durdur (opsiyonel)
-      if (duration != null) {
-        Timer(duration, () {
-          stopRecording();
-        });
-      }
+      // duration parametresi çağıran tarafta kontrol ediliyor.
+      // Burada otomatik stop yapılırsa, çağıran tekrar stop çağırdığında
+      // "⚠️ Kayıt yapılmıyor" ve null path problemi oluşuyor.
 
       return true;
     } catch (e) {
