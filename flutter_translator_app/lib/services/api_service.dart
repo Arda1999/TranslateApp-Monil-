@@ -7,6 +7,11 @@ class ApiService {
   final String host;
   final Dio _dio = Dio();
 
+  static const List<String> _ttsPaths = <String>[
+    '/text_to_speech',
+    '/text-to-speech',
+  ];
+
   ApiService({required this.host});
 
   // Dil algılama servisi (Port 5000)
@@ -52,32 +57,84 @@ class ApiService {
   }) async {
     try {
       print('🔊 Text-to-Speech başlatılıyor...');
-      
-      final response = await http.post(
-        Uri.parse('http://$host:5002/text_to_speech'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'text': text,
-          'language': language,
-        }),
-      );
 
-      if (response.statusCode == 200) {
-        // MP3 dosyasını geçici bir yere kaydet
-        final bytes = response.bodyBytes;
-        final tempDir = Directory.systemTemp;
-        final tempFile = File('${tempDir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.mp3');
-        await tempFile.writeAsBytes(bytes);
-        
-        print('✅ Ses dosyası oluşturuldu: ${tempFile.path}');
-        return tempFile.path;
-      } else {
-        print('❌ Text-to-Speech hatası: ${response.statusCode}');
+      http.Response? lastResponse;
+      for (final path in _ttsPaths) {
+        final url = Uri.parse('http://$host:5002$path');
+        final response = await http
+            .post(
+              url,
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({
+                'text': text,
+                'language': language,
+              }),
+            )
+            .timeout(const Duration(seconds: 10));
+
+        lastResponse = response;
+        if (response.statusCode == 200) {
+          final bytes = response.bodyBytes;
+          final tempDir = Directory.systemTemp;
+          final tempFile = File(
+            '${tempDir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.mp3',
+          );
+          await tempFile.writeAsBytes(bytes);
+          print('✅ Ses dosyası oluşturuldu: ${tempFile.path}');
+          return tempFile.path;
+        }
+
+        // 404 ise farklı route adı denenebilir.
+        if (response.statusCode == 404) {
+          print('⚠️ TTS endpoint bulunamadı: $url (404)');
+          continue;
+        }
+
+        final bodyPreview = response.body.length > 300
+            ? '${response.body.substring(0, 300)}...'
+            : response.body;
+        print('❌ TTS hatası (${response.statusCode}) url=$url body=$bodyPreview');
         return null;
       }
+
+      if (lastResponse != null) {
+        print('❌ Text-to-Speech başarısız: son durum kodu ${lastResponse.statusCode}');
+      }
+      return null;
     } catch (e) {
       print('❌ Text-to-Speech hatası: $e');
       return null;
+    }
+  }
+
+  // TTS servisini kontrol et: bazı backend'lerde /health olmayabilir.
+  Future<bool> checkTextToSpeechService() async {
+    try {
+      final healthUrl = Uri.parse('http://$host:5002/health');
+      final healthResponse = await http
+          .get(healthUrl)
+          .timeout(const Duration(seconds: 3));
+
+      if (healthResponse.statusCode == 200) return true;
+
+      // /health yoksa (404), TTS endpoint'inin varlığını probe et.
+      for (final path in _ttsPaths) {
+        final url = Uri.parse('http://$host:5002$path');
+        final response = await http
+            .get(url)
+            .timeout(const Duration(seconds: 3));
+
+        // 404 = route yok. 405/400/415 vb. route var ama method/payload yanlış olabilir;
+        // servis ayakta sayalım.
+        if (response.statusCode != 404 && response.statusCode < 500) {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      print('❌ TTS servis kontrol hatası (port 5002): $e');
+      return false;
     }
   }
 
@@ -99,7 +156,7 @@ class ApiService {
   Future<Map<String, bool>> checkAllServices() async {
     return {
       'detectLanguage': await checkHealth(5000),
-      'textToSpeech': await checkHealth(5002),
+      'textToSpeech': await checkTextToSpeechService(),
     };
   }
 }
